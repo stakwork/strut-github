@@ -1,0 +1,18 @@
+package: stadeum/github
+version: 0.1.0
+description: GitHub for the box's people. Each person connects their own account (the box's connect seam, or a token they paste), sees whom they are connected as and disconnects. An admin sees the box's GitHub orgs and picks repositories for the Code app's list. It serves github.com's token to git, and gives the job agent strut's github/create-pr.
+requires:
+  # Each person's own token. Connect GitHub (stadeum's connect seam) writes
+  # it; Paste keeps one a person made; Disconnect deletes it. The steps read
+  # and write only the person's own value (`secrets.own`), never a
+  # deployment's: there is no box token.
+  optional: [GITHUB_TOKEN]
+provides:
+  secrets: [GITHUB_TOKEN]
+  # Which secret git reads for github.com: strut's own entry says the same.
+  git:
+    - { host: github.com, secret: GITHUB_TOKEN }
+job:
+  # Strut's own step: a code change ends as a pull request, opened as the
+  # job's person with their own token.
+  tools: [github/create-pr]

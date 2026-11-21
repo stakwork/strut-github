@@ -1,0 +1,13 @@
+title: GitHub
+description: Your GitHub account on this box. Connect it, or paste a token you made, see whom you are connected as, and disconnect. An admin also sees the box's GitHub orgs and their repositories, and adds them to the Code app's list.
+icon: git-pull-request
+entry: src/App.tsx
+grants:
+  workflows: []
+  # `me` is everyone's; `paste` and `disconnect` change the viewer's own
+  # token; `installations` and `repositories` are an admin's, and refuse
+  # anyone else. `graph/changes`: the repositories read again when the
+  # box's list (stadeum/code's Repository nodes) changes.
+  steps: [stadeum/github/me, stadeum/github/paste, stadeum/github/disconnect, stadeum/github/installations, stadeum/github/repositories, graph/changes]
+  sqlite: false
+  automations: []

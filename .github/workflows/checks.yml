@@ -1,0 +1,65 @@
+name: checks
+
+# Every PR and every push to main: the package installed from this checkout
+# into a strut started from stakwork/strut's main, on a LadybugDB file, and
+# driven as the GitHub app's page drives it (package.test.ts), with
+# stakwork/strut-code's main installed partway for the box's list. Strut is
+# installed as its own CI installs it (stakwork/strut .github/workflows/tests.yml):
+# yarn.lock, no scripts, and the kit's own install. GitHub's API is stood in
+# for inside the test: nothing reaches GitHub and no token is read.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: github
+
+      - uses: actions/checkout@v4
+        with:
+          repository: stakwork/strut
+          ref: main
+          path: strut
+
+      - uses: actions/checkout@v4
+        with:
+          repository: stakwork/strut-code
+          ref: main
+          path: code
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: |
+            strut/yarn.lock
+            strut/kit/yarn.lock
+
+      - name: Install strut
+        working-directory: strut
+        run: |
+          yarn install --frozen-lockfile --ignore-scripts
+          yarn --cwd kit install --frozen-lockfile --ignore-scripts
+          echo "strut $(git rev-parse --short HEAD), strut-code $(git -C ../code rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Test the package on strut
+        working-directory: github
+        env:
+          STRUT_DIR: ${{ github.workspace }}/strut
+          STRUT_CODE_DIR: ${{ github.workspace }}/code
+        run: npm test
