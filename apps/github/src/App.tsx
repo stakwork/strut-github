@@ -75,10 +75,14 @@ export default function App() {
   const client = useStrutClient();
   const qc = useQueryClient();
   const host = useHost();
-  // The host's own page for this app: on a box, Stadeum's, where the connect seam is.
+  // The host's own page for this app (on a box, Stadeum's, where the
+  // connect seam is), offered only when it is on the box this strut is
+  // served for: strut's own address is where this document's frame was
+  // loaded from, which no link can set (./links.ts).
   const page = useShareLink()?.();
-  const connect = seamLink(page);
-  const install = seamLink(page, { install: true });
+  const strut = typeof document !== "undefined" ? document.baseURI : undefined;
+  const connect = seamLink(page, strut);
+  const install = seamLink(page, strut, { install: true });
   const me = useQuery({ queryKey: ["github", "me"], queryFn: () => client.run<Me>(ME) });
   const [notice, setNotice] = useState<{ text: string; link?: { href: string; label: string } }>();
   const [error, setError] = useState<string>();

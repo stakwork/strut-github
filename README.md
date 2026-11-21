@@ -34,13 +34,9 @@ For every person:
 - **Connect GitHub** opens the box's connect seam
   (`https://<the box>/api/connect/github?return=<this app's page>`), which
   shows the box's own confirm page, then GitHub, then writes the token as
-  the person's own `GITHUB_TOKEN` and comes back to the app. The app reads
-  its host's page from strut (`strut/page` in its host context, @strut/kit
-  `useShareLink`): framed by Stadeum it is `https://<the box>/apps/<name>`,
-  and the seam is on that origin. Strut's own UI hands an app strut's own
-  address (`<strut>/?app=<name>`), where there is no seam: there the app
-  says so and offers only Paste. It reads everything again when the person
-  comes back to the page.
+  the person's own `GITHUB_TOKEN` and comes back to the app. It reads
+  everything again when the person comes back to the page. Where the seam
+  is, and when Connect is offered at all, is below ("Where Connect leads").
 - **Connected as @login**, read with the person's own token alone, never a
   deployment value; or that GitHub no longer takes it.
 - **Paste a token**, for a box with no App: a fine-grained personal access
@@ -109,6 +105,34 @@ For an admin, in the same app:
   `forget` or `retire` and no hook secret: those come with strut's webhook
   routes and events.
 
+### Where Connect leads
+
+The app learns its host's page from strut (`strut/page` in its host
+context, @strut/kit `useShareLink`): framed by Stadeum it is
+`https://<the box>/apps/<name>`, and the seam is on that origin. But that
+page cannot be trusted on its own. Strut takes it from its embed URL's
+`embed_origin` and `embed_page` (`web/src/embed.ts`: `captureEmbedOrigin`
+checks only that `embed_origin` is a bare origin; `embedPage` only that the
+page is on it), checks it against nothing it was told to trust, and lets
+any page frame its UI. A page framed by another site gets no session
+(`SameSite=Lax`, `src/auth.ts`), but a page on the same site as strut (any
+`*.<the box's domain>`; on hosted boxes, any other `*.stakwork.ai`) frames
+it signed in as the person. That page could name any origin as the host's,
+and a Connect GitHub there would lead to a page imitating GitHub's
+sign-in. A link followed in the address bar cannot do it: unframed, strut
+ignores `embed_page` and hands its own address.
+
+So Connect is offered only when the page is on the box this strut is
+served for. A box serves strut at `strut.<box>` and Stadeum, with its seam,
+at `<box>` (stadeum's compose, and the seam's own `return` rule names the
+same pair). The app reads strut's own address from where its document was
+loaded (`document.baseURI`: the app is a `srcdoc` inside strut's page),
+which the browser sets and no link can. A page on another origin, strut's
+own UI, a strut not served at `strut.<box>`, or no page at all (a native
+app's web view) gets no Connect; the app says so and offers Paste.
+`apps/github/src/links.ts` holds the rule, and the test reads it with each
+of those pages. The real fix is strut's (see "What strut should change").
+
 ## What a box needs
 
 - **A strut with stakwork/strut#800** (on strut's `main` from 9c3657a8):
@@ -117,8 +141,9 @@ For an admin, in the same app:
   package`). It also needs #789 (`provides.secrets`, `secrets.own`) and
   #798 (`provides.git`), both before it. Strut has no way yet for a package
   to say which strut it needs.
-- **For Connect GitHub: Stadeum's connect seam and a GitHub App.** The seam
-  is stadeum-ui's (`/api/connect/github`, `plans/software.md` §2.1); it is
+- **For Connect GitHub: Stadeum's connect seam and a GitHub App,** with
+  strut served at `strut.<box>` beside Stadeum at `<box>`, as stadeum's
+  compose does ("Where Connect leads"). The seam is stadeum-ui's (`/api/connect/github`, `plans/software.md` §2.1); it is
   offered only when stadeum-ui has `CONNECT_GITHUB_CLIENT_ID` and
   `_CLIENT_SECRET`, and Add a GitHub org needs `CONNECT_GITHUB_SLUG` too.
   Hosted boxes use Stakwork's App, "Stadeum AI"; a self-hosted box registers
@@ -138,6 +163,18 @@ the job's person with their own `GITHUB_TOKEN`. Pushing the branch first
 is `git/push`, which stadeum/code should grant (a forge-neutral step);
 until it does, a job without a pod hands over a diff. The guards on
 `git/push` are stakwork/strut#802.
+
+## What strut should change
+
+An app's host page should be one strut was told to trust, never one a URL
+names. Either the host names its page where only it can (`POST /auth/ticket
+{ actor, role, page }` with its key, carried by the session it buys), or a
+deployment setting lists the hosts that frame strut (stadeum's compose
+would set `https://<box>`); strut honours `embed_origin` / `embed_page`
+only for those, sends `frame-ancestors` for them, and checks the frame's
+real parent where the browser says (`location.ancestorOrigins`). With that,
+`strut/page` is the host's, and the host could say what it offers (a seam,
+whether the box has the App) so the package names no route.
 
 ## What stakwork/strut-code's Code app should accept
 
@@ -200,7 +237,9 @@ curl -X POST $STRUT/packages/install -H "authorization: Bearer $KEY" -H "x-strut
 ```
 
 Connect GitHub needs a host that frames strut and serves the seam on its
-own origin (Stadeum); in strut's own UI the app offers Paste.
+own origin, with strut at `strut.<host>` (Stadeum's layout; on a laptop,
+`http://box.localhost:<port>` framing `http://strut.box.localhost:<port>`
+works); in strut's own UI the app offers Paste.
 
 ## Releasing it
 

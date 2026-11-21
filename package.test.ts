@@ -154,15 +154,34 @@ describe("the package's own rules", () => {
     assert.equal(githubKey("https://github.com/acme/app/tree/main"), undefined);
   });
 
-  it("sends a person to the box's connect seam on the host's own page, never strut's own", () => {
+  it("sends a person to the box's connect seam only when the host's page is on the box this strut is served for", () => {
+    const strut = "https://strut.acme.stakwork.ai/?ticket=x&app=stadeum%2Fgithub%2Fgithub&solo=1";
     const page = "https://acme.stakwork.ai/apps/stadeum%2Fgithub%2Fgithub";
-    assert.equal(seamLink(page), `https://acme.stakwork.ai/api/connect/github?return=${encodeURIComponent(page)}`);
-    assert.equal(seamLink(page, { install: true }), `https://acme.stakwork.ai/api/connect/github?return=${encodeURIComponent(page)}&install=1`);
-    // Strut's own UI hands its own address, which names the app: it has no seam.
-    assert.equal(seamLink("https://strut.acme.stakwork.ai/?app=stadeum%2Fgithub%2Fgithub"), undefined);
-    // A native app's web view hands none.
-    assert.equal(seamLink(undefined), undefined);
-    assert.equal(seamLink("javascript:alert(1)"), undefined);
+    assert.equal(seamLink(page, strut), `https://acme.stakwork.ai/api/connect/github?return=${encodeURIComponent(page)}`);
+    assert.equal(seamLink(page, strut, { install: true }), `https://acme.stakwork.ai/api/connect/github?return=${encodeURIComponent(page)}&install=1`);
+    // On a developer's machine the two may be on different ports of the box's host.
+    assert.equal(seamLink("http://box.localhost:4100/apps/x", "http://strut.box.localhost:3100/"), `http://box.localhost:4100/api/connect/github?return=${encodeURIComponent("http://box.localhost:4100/apps/x")}`);
+    // Strut takes the host's page from its embed URL (embed_page, embed_origin) and
+    // checks it against nothing it trusts, so a page that frames strut can name any
+    // origin: never one but the box's.
+    for (const named of [
+      "https://phish.example/apps/github", // another site
+      "https://evil.stakwork.ai/apps/github", // a sibling of the box on the same site
+      "https://stakwork.ai/apps/github", // the box's parent
+      "https://strut.acme.stakwork.ai/?app=stadeum%2Fgithub%2Fgithub", // strut's own UI: no seam there
+      "http://acme.stakwork.ai/apps/github", // the box's host, another scheme
+      "https://acme.stakwork.ai.phish.example/apps/github",
+      "javascript:alert(1)",
+    ]) {
+      assert.equal(seamLink(named, strut), undefined, named);
+    }
+    // A strut not served at strut.<box> (Peel's, a bare host) or none at all: no seam is the box's.
+    assert.equal(seamLink(page, "http://localhost:3000/"), undefined);
+    assert.equal(seamLink("https://com/apps/x", "https://strut.com/"), undefined);
+    assert.equal(seamLink(page, "about:srcdoc"), undefined);
+    assert.equal(seamLink(page, undefined), undefined);
+    // A native app's web view hands no page.
+    assert.equal(seamLink(undefined, strut), undefined);
   });
 });
 
