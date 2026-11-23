@@ -14,7 +14,8 @@ list of repositories is the
 
 | Part | What |
 | --- | --- |
-| `strut.yaml` | `requires.optional: [GITHUB_TOKEN]`; `provides.secrets: [GITHUB_TOKEN]` (its steps manage each person's own value); `provides.git` for `github.com` with that secret (strut's own entry says the same); `job.tools: [github/create-pr, github/pr-status, github/fetch-pr]` (strut's steps) |
+| `strut.yaml` | `requires.optional: [GITHUB_TOKEN]`; `provides.secrets: [GITHUB_TOKEN]` (its steps manage each person's own value); `provides.git` for `github.com` with that secret (strut's own entry says the same); `job.tools: [github/create-pr, github/pr-status, github/fetch-pr]` (strut's steps); `schedules:` runs `pr-checks` every 5 minutes |
+| `workflows/pr-checks.yaml` | One step, strut's `job/pr-checks`: a job whose pull request's checks all finished with one failed gets one turn to fix them ("When the checks fail later", below) |
 | `apps/github/` | **GitHub**, every person's app (below) |
 | `steps/me.ts` | Whom the person is connected as: their own token alone, asked of GitHub's `GET /user`. Says whether the token came from the App or was pasted, and whether GitHub still takes it. Everyone's |
 | `steps/paste.ts` | Keeps a personal access token the person made, as their own secret, once GitHub says whom it is. From the GitHub app alone, by the person themselves |
@@ -169,6 +170,26 @@ the check says why it has no log, and its pass or fail still reads. Pushing the 
 is `git/push`, which stadeum/code should grant (a forge-neutral step);
 until it does, a job without a pod hands over a diff. The guards on
 `git/push` are stakwork/strut#802.
+
+### When the checks fail later
+
+A job ends its turn while CI is still running: Code Change says not to
+wait. So the package looks again for it. Its schedule runs `pr-checks` every
+5 minutes, one step, strut's `job/pr-checks` (stakwork/strut
+`plans/pr-checks.md`, strut#835). That step:
+- reads the pull requests the box's recent jobs delivered;
+- once a pull request's checks have all finished with one failed, sends
+  its job one turn to fix them. The turn runs as the person whose turn
+  opened it, and names that turn's conversation, so Jamie tells them what
+  happened.
+
+It sends that turn once per pull request. After that, a fix is a person's
+click on the PR card.
+
+Strut does the reading and the launching, because only strut may act as a
+box's people. The package only says when. An admin can switch the schedule
+off like any package schedule. It needs a strut with `job/pr-checks`; on
+one without, the step is unknown.
 
 ## What strut should change
 

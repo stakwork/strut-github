@@ -318,7 +318,7 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
     const { packages } = await (await strut.app.request("/packages")).json();
     const pkg = packages.find((p: any) => p.package === "stadeum/github");
     assert.ok(pkg, "installed");
-    assert.equal(pkg.version, "0.2.0");
+    assert.equal(pkg.version, "0.3.0");
     assert.deepEqual(pkg.provides?.secrets, ["GITHUB_TOKEN"]);
     assert.deepEqual(pkg.provides?.git, [{ host: "github.com", secret: "GITHUB_TOKEN" }]);
     const job = await strut.workspace.getWorkflow("job");
@@ -331,6 +331,20 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
     const manifest = await strut.apps.manifestOf(APP);
     assert.deepEqual([...manifest.manifest.grants.steps].sort(), [...STEPS, "graph/changes"].sort());
     assert.equal(manifest.manifest.admin, undefined, "everyone's app");
+  });
+
+  it("looks at the jobs' pull requests every 5 minutes through strut's job/pr-checks, which names no person and says nothing to the job", async () => {
+    const { automations } = await (await strut.app.request("/automations")).json();
+    const a = automations.find((x: any) => x.workflow === "stadeum/github/pr-checks");
+    assert.ok(a, `scheduled: ${JSON.stringify(automations.map((x: any) => x.workflow))}`);
+    assert.deepEqual([a.package, a.name, a.enabled, a.trigger.every, a.trigger.minutes], ["stadeum/github", "pr-checks", true, "interval", 5]);
+    assert.equal(a.runsAs, "root", "as the person who installed it, who reads and launches nothing: the step does, as each job's person");
+    const flow = await strut.workspace.getWorkflow("stadeum/github/pr-checks");
+    assert.deepEqual(flow.steps.map((s: any) => [s.type, s.config ?? {}]), [["job/pr-checks", {}]], "one step: no person, no text");
+    // A fire: strut's pass runs. No job here has a pull request, so it sends nothing.
+    const run = await strut.run("stadeum/github/pr-checks", {}, { actor: "root", principal: "root" });
+    seen.push(JSON.stringify(run));
+    assert.equal(run.status, "success", JSON.stringify(run));
   });
 
   it("says a person with no token of their own is not connected, though the deployment has one, and asks GitHub nothing", async () => {

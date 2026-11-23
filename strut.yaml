@@ -1,5 +1,5 @@
 package: stadeum/github
-version: 0.2.0
+version: 0.3.0
 description: GitHub integration for the Stadeum GitHub App. Run agents in your repos and open PRs.
 requires:
   # Each person's own token. Connect GitHub (stadeum's connect seam) writes
@@ -19,3 +19,11 @@ job:
   # `logs: true`), and what reviewers said (fetch-pr). Reading Actions logs
   # needs the App's "Actions: read"; without it a check says why it has none.
   tools: [github/create-pr, github/pr-status, github/fetch-pr]
+schedules:
+  # Every 5 minutes, strut's job/pr-checks: a job whose pull request's checks
+  # all finished with one failed gets one turn to fix it, as the person whose
+  # turn opened it, and its end wakes their conversation (stakwork/strut
+  # plans/pr-checks.md). Strut does the reading and the launching; this only
+  # says when. Needs a strut with job/pr-checks (stakwork/strut#835).
+  - workflow: pr-checks
+    trigger: { every: interval, minutes: 5 }
