@@ -2,11 +2,14 @@ name: checks
 
 # Every PR and every push to main: the package installed from this checkout
 # into a strut started from stakwork/strut's main, on a LadybugDB file, and
-# driven as the GitHub app's page drives it (package.test.ts), with
-# stakwork/strut-code's main installed partway for the box's list. Strut is
-# installed as its own CI installs it (stakwork/strut .github/workflows/tests.yml):
-# yarn.lock, no scripts, and the kit's own install. GitHub's API is stood in
-# for inside the test: nothing reaches GitHub and no token is read.
+# driven as the GitHub app's page and strut's git/repositories drive it
+# (package.test.ts). The package needs strut's package seams
+# (stakwork/strut#851: a forge's steps on its provides.git entry): until
+# strut's main has them, strut is checked out at that pull request's
+# branch. Strut is installed as its own CI installs it (stakwork/strut
+# .github/workflows/tests.yml): yarn.lock, no scripts, and the kit's own
+# install. GitHub's API is stood in for inside the test: nothing reaches
+# GitHub and no token is read.
 
 on:
   pull_request:
@@ -36,11 +39,14 @@ jobs:
           ref: main
           path: strut
 
-      - uses: actions/checkout@v4
-        with:
-          repository: stakwork/strut-code
-          ref: main
-          path: code
+      - name: Until strut's main has the package seams, the branch of stakwork/strut#851
+        working-directory: strut
+        run: |
+          if ! grep -rqs 'type: "git/repositories"' src/steps; then
+            git fetch --quiet --depth=1 origin plan/package-seams
+            git checkout --quiet FETCH_HEAD
+            echo "strut's main has no git/repositories yet: testing on plan/package-seams (stakwork/strut#851)" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -55,11 +61,10 @@ jobs:
         run: |
           yarn install --frozen-lockfile --ignore-scripts
           yarn --cwd kit install --frozen-lockfile --ignore-scripts
-          echo "strut $(git rev-parse --short HEAD), strut-code $(git -C ../code rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "strut $(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Test the package on strut
         working-directory: github
         env:
           STRUT_DIR: ${{ github.workspace }}/strut
-          STRUT_CODE_DIR: ${{ github.workspace }}/code
         run: npm test

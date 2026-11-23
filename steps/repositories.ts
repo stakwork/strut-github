@@ -1,32 +1,31 @@
 import { z, defineStep } from "strut";
-import { asCtx, githubKey, listed, repositoriesOf, requireAdmin, tokenOf } from "./_github.js";
+import { asCtx, reachable, tokenOf } from "./_github.js";
 
 export default defineStep({
   type: "stadeum/github/repositories",
   description:
-    "The repositories one of the box's GitHub orgs grants the admin's own token (GitHub's GET /user/installations/{id}/repositories), by name, " +
-    "each marked `listed` when it is already on the box's list: the Repository nodes the stadeum/code package keeps, read through the graph. " +
-    "`code` is false when the box has no such list (that package is not installed). An admin's call from the GitHub app alone. It changes nothing: " +
-    "a repository is added to the list in the Code app.",
+    "Every github.com repository the person this run is reaches with their own GitHub token: what strut's git/repositories asks this package for (its provides.git entry names this step). " +
+    "Through the box's GitHub App, every installation their token sees, each repository `picked` when its org picked it for the App rather than granting all; with a token they pasted, " +
+    "the repositories that token reaches. Each: its https `url`, `name`, whether it is `private`, when it was `pushed` and its `description`. Archived repositories are left out. " +
+    "It changes nothing: workspaces are made from these elsewhere.",
   effect: "read",
-  input: z.object({ installation: z.number().int().positive().describe("The installation's id, from stadeum/github/installations") }),
+  input: z.object({ host: z.string().optional().describe("The host strut asks for: github.com, the only one this package serves") }),
   output: z.object({
-    code: z.boolean(),
     repositories: z.array(
-      z.object({ url: z.string(), owner: z.string(), name: z.string(), private: z.boolean(), archived: z.boolean().optional(), listed: z.boolean() }),
+      z.object({
+        url: z.string(),
+        name: z.string(),
+        private: z.boolean(),
+        pushed: z.string().optional(),
+        description: z.string().optional(),
+        picked: z.boolean().optional().describe("Picked for the App one by one, not granted with all of its owner's"),
+      }),
     ),
-    total: z.number().describe("How many the installation grants; more than shown past 1,000"),
   }),
-  async run(cfg, ctx) {
+  async run(_cfg, ctx) {
     const c = asCtx(ctx);
-    requireAdmin(c);
     const token = await tokenOf(c);
-    if (!token) throw new Error("connect GitHub first: the repositories shown are the ones your own account reaches");
-    const [{ repositories, total }, onList] = await Promise.all([repositoriesOf(c, token, cfg.installation), listed(c)]);
-    return {
-      code: !!onList,
-      repositories: repositories.map((r) => ({ ...r, listed: !!onList?.has(githubKey(r.url) ?? "") })),
-      total,
-    };
+    if (!token) throw new Error("connect GitHub first, in the GitHub app: the repositories listed are the ones your own account reaches");
+    return { repositories: await reachable(c, token) };
   },
 });

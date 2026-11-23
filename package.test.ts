@@ -4,9 +4,10 @@
  * checkout of stakwork/strut's main (`STRUT_DIR`, default `../strut`, with
  * its install), on a LadybugDB file. Then driven as the GitHub app's page
  * drives it: a member's call and an admin's, and an admin's call from
- * another package's app. stadeum/code (`STRUT_CODE_DIR`, default
- * `../strut-code`) is installed partway, to see a repository already on the
- * box's list marked so, read through the graph without requiring it.
+ * another package's app. What a person's token reaches is asked for as
+ * strut asks for it, through strut's `git/repositories`, which picks this
+ * package's `repositories` step by its `provides.git` entry: a strut with
+ * the package seams of stakwork/strut#851.
  *
  * GitHub's API is stood in for through strut's own `http` (`createStrut({
  * services: { http } })`, as strut's tests stand in for it): a fetch that
@@ -16,7 +17,7 @@
  * deployment's GITHUB_TOKEN this test sets is one GitHub would answer for,
  * to see that no step ever sends it.
  *
- *   STRUT_DIR=../strut STRUT_CODE_DIR=../strut-code npm test
+ *   STRUT_DIR=../strut npm test
  */
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -25,11 +26,10 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { githubKey, kindOf, pasted, scrub } from "./steps/_github.ts";
+import { kindOf, pasted, scrub } from "./steps/_github.ts";
 import { seamLink } from "./apps/github/src/links.ts";
 
 const STRUT = resolve(process.env["STRUT_DIR"] ?? "../strut");
-const CODE_DIR = resolve(process.env["STRUT_CODE_DIR"] ?? "../strut-code");
 // Nobody's token: not this machine's, not its git's.
 for (const k of ["GITHUB_TOKEN", "GH_TOKEN", "STRUT_GIT_LOCAL"]) delete process.env[k];
 const from = async <T>(path: string): Promise<T> => (await import(pathToFileURL(join(STRUT, "src", path)).href)) as T;
@@ -37,12 +37,13 @@ const from = async <T>(path: string): Promise<T> => (await import(pathToFileURL(
 const HERE = resolve(".");
 const APP = "stadeum/github/github";
 const OTHER_APP = "acme/other/console";
-const STEPS = ["stadeum/github/me", "stadeum/github/paste", "stadeum/github/disconnect", "stadeum/github/installations", "stadeum/github/repositories"];
+/** The GitHub app's steps. */
+const STEPS = ["stadeum/github/me", "stadeum/github/paste", "stadeum/github/disconnect", "stadeum/github/installations", "stadeum/github/granted"];
 
 /** Another package, whose app an admin may open, granting this package's steps: it must see and change nothing. */
 const OTHER: Record<string, string> = {
   "strut.yaml": "package: acme/other\nversion: 0.1.0\n",
-  "apps/console/app.yaml": ["title: Console", "grants:", `  steps: [${STEPS.join(", ")}]`, ""].join("\n"),
+  "apps/console/app.yaml": ["title: Console", "grants:", `  steps: [${[...STEPS, "stadeum/github/repositories"].join(", ")}]`, ""].join("\n"),
   "apps/console/src/App.tsx": "export default function App() { return <p>console</p>; }\n",
 };
 
@@ -61,8 +62,18 @@ const T = {
 const ALL_TOKENS = Object.values(T);
 const LOGIN: Record<string, string> = { [T.root]: "root-gh", [T.ada]: "ada-gh", [T.carl]: "carl-gh", [T.bea]: "bea-gh", [T.dee]: "dee-gh", [T.hive]: "hive-gh", [T.deployment]: "the-box" };
 
-/** The org on the App, its repositories: 101, so a list takes two pages. One is on the box's list in another case. */
-const ACME_REPOS = [{ full_name: "acme/App", private: true }, { full_name: "acme/web", private: false, archived: true }, ...Array.from({ length: 99 }, (_, i) => ({ full_name: `acme/r${String(i).padStart(3, "0")}`, private: true }))];
+/** The org on the App, its repositories: 101, so a list takes two pages. One is archived. */
+const ACME_REPOS = [
+  { full_name: "acme/App", private: true, pushed_at: "2026-11-22T09:00:00Z", description: "The app" },
+  { full_name: "acme/web", private: false, archived: true, pushed_at: "2026-01-01T00:00:00Z" },
+  ...Array.from({ length: 99 }, (_, i) => ({ full_name: `acme/r${String(i).padStart(3, "0")}`, private: true, pushed_at: `2026-10-${String(1 + (i % 28)).padStart(2, "0")}T00:00:00Z` })),
+];
+/** What a pasted token reaches: GitHub's /user/repos, a plain list. */
+const OWN_REPOS = [
+  { full_name: "dee-gh/notes", private: true, pushed_at: "2026-11-20T00:00:00Z", description: null },
+  { full_name: "acme/App", private: true, pushed_at: "2026-11-22T09:00:00Z", description: "The app" },
+  { full_name: "dee-gh/old", private: false, archived: true },
+];
 const INSTALLATIONS = [
   { id: 202, account: { login: "root-gh", type: "User" }, repository_selection: "all", app_slug: "stadeum-ai" },
   { id: 101, account: { login: "acme", type: "Organization" }, repository_selection: "selected", app_slug: "stadeum-ai" },
@@ -105,9 +116,13 @@ function standInGitHub(calls: Call[]) {
       if (!token.startsWith("ghu_")) return json(403, { message: "You must authenticate with an access token authorized to a GitHub App in order to list installations" });
       return json(200, { total_count: INSTALLATIONS.length, installations: INSTALLATIONS });
     }
+    if (url.pathname === "/user/repos") {
+      const page = Number(url.searchParams.get("page") ?? 1);
+      return json(200, page === 1 ? OWN_REPOS : []);
+    }
     const m = /^\/user\/installations\/(\d+)\/repositories$/.exec(url.pathname);
     if (m) {
-      const repos = m[1] === "101" ? ACME_REPOS : m[1] === "202" ? [{ full_name: "root-gh/dotfiles", private: false }] : undefined;
+      const repos: Array<Record<string, unknown>> | undefined = m[1] === "101" ? ACME_REPOS : m[1] === "202" ? [{ full_name: "root-gh/dotfiles", private: false, pushed_at: "2026-11-01T00:00:00Z" }] : undefined;
       if (!repos) return json(404, { message: "Not Found" });
       const per = Number(url.searchParams.get("per_page") ?? 30);
       const page = Number(url.searchParams.get("page") ?? 1);
@@ -145,13 +160,6 @@ describe("the package's own rules", () => {
   it("scrubs a token out of anything it shows", () => {
     assert.equal(scrub(`bad ${T.ada} and ${T.bea}`), "bad [a token] and [a token]");
     assert.equal(scrub("weird value 12345", "12345"), "weird value [a token]");
-  });
-
-  it("reads a github.com address one way, as GitHub's names ignore case", () => {
-    assert.equal(githubKey("https://github.com/Acme/App"), "acme/app");
-    assert.equal(githubKey("https://GitHub.com/acme/app.git"), "acme/app");
-    assert.equal(githubKey("https://gitlab.com/acme/app"), undefined);
-    assert.equal(githubKey("https://github.com/acme/app/tree/main"), undefined);
   });
 
   it("sends a person to the box's connect seam only when the host's page is on the box this strut is served for", () => {
@@ -242,6 +250,8 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
       delete process.env["STRUT_API_KEY"];
     }
   };
+  /** A one-step run's output: its step's. */
+  const outOf = (run: any) => run.output?.s ?? run.output;
   /** Run one step as a workflow of its own would: no page, no app. */
   const once = async (name: string, step: string, config: Record<string, unknown>, actor = "root") => {
     await strut.workspace.publishWorkflowByContent(`test/${name}`, `steps:\n  - id: s\n    type: ${step}\n    config: ${JSON.stringify(config)}\n`);
@@ -318,9 +328,10 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
     const { packages } = await (await strut.app.request("/packages")).json();
     const pkg = packages.find((p: any) => p.package === "stadeum/github");
     assert.ok(pkg, "installed");
-    assert.equal(pkg.version, "0.3.0");
+    assert.equal(pkg.version, "0.4.0");
     assert.deepEqual(pkg.provides?.secrets, ["GITHUB_TOKEN"]);
-    assert.deepEqual(pkg.provides?.git, [{ host: "github.com", secret: "GITHUB_TOKEN" }]);
+    // Its forge's steps by host (stakwork/strut#851): its own `repositories`, by its full type, and strut's github/create-pr.
+    assert.deepEqual(pkg.provides?.git, [{ host: "github.com", secret: "GITHUB_TOKEN", repositories: "stadeum/github/repositories", pull_request: "github/create-pr" }]);
     const job = await strut.workspace.getWorkflow("job");
     assert.ok(job.params.tools.includes("github/create-pr"), `the job agent is granted strut's github/create-pr: ${job.params.tools}`);
     assert.ok(!(job.params.approve ?? []).includes("github/create-pr"), "and it does not ask first: the pull request is the review");
@@ -329,7 +340,7 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
       assert.ok(!(job.params.approve ?? []).includes(read), `${read} only reads: no ask`);
     }
     const manifest = await strut.apps.manifestOf(APP);
-    assert.deepEqual([...manifest.manifest.grants.steps].sort(), [...STEPS, "graph/changes"].sort());
+    assert.deepEqual([...manifest.manifest.grants.steps].sort(), [...STEPS].sort(), "no graph reads: it names no other package");
     assert.equal(manifest.manifest.admin, undefined, "everyone's app");
   });
 
@@ -469,7 +480,7 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
     const n = calls.length;
     for (const [type, config] of [
       ["stadeum/github/installations", {}],
-      ["stadeum/github/repositories", { installation: 101 }],
+      ["stadeum/github/granted", { installation: 101 }],
     ] as const) {
       assert.match((await page("ada", false)(type, config)).error ?? "", /only an admin sees the box's GitHub orgs, in the GitHub app/, type);
       assert.match((await page("root", true, OTHER_APP)(type, config)).error ?? "", /the box's GitHub orgs are seen in the GitHub app \(stadeum\/github\/github\), not from acme\/other\/console/, type);
@@ -488,34 +499,77 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
     assert.match((await page("dee", true)("stadeum/github/installations")).error ?? "", /connect GitHub first/);
   });
 
-  it("lists an org's repositories, every page, and says when the box keeps no list", async () => {
+  it("lists each org's repositories for an admin, every page, read only", async () => {
     const n = calls.length;
-    const out = await ok(page("root", true)("stadeum/github/repositories", { installation: 101 }));
-    assert.equal(out.code, false, "stadeum/code is not installed yet");
+    const out = await ok(page("root", true)("stadeum/github/granted", { installation: 101 }));
     assert.equal(out.total, 101);
     assert.equal(out.repositories.length, 101);
-    assert.deepEqual(out.repositories[0], { url: "https://github.com/acme/App", owner: "acme", name: "App", private: true, listed: false });
-    assert.deepEqual(out.repositories.find((r: any) => r.name === "web"), { url: "https://github.com/acme/web", owner: "acme", name: "web", private: false, archived: true, listed: false });
-    assert.deepEqual(since(n).map((c) => c.url), [
-      "https://api.github.com/user/installations/101/repositories?per_page=100&page=1",
-      "https://api.github.com/user/installations/101/repositories?per_page=100&page=2",
+    assert.deepEqual(out.repositories[0], { url: "https://github.com/acme/App", owner: "acme", name: "App", private: true });
+    assert.deepEqual(out.repositories.find((r: any) => r.name === "web"), { url: "https://github.com/acme/web", owner: "acme", name: "web", private: false, archived: true }, "archived, and shown");
+    assert.deepEqual(since(n).map((c) => [c.url, c.auth]), [
+      ["https://api.github.com/user/installations/101/repositories?per_page=100&page=1", `Bearer ${T.root}`],
+      ["https://api.github.com/user/installations/101/repositories?per_page=100&page=2", `Bearer ${T.root}`],
     ]);
-    assert.match((await page("root", true)("stadeum/github/repositories", { installation: 999 })).error ?? "", /GitHub did not show that org's repositories: Not Found/);
+    assert.deepEqual(await ok(page("root", true)("stadeum/github/granted", { installation: 202 })), {
+      total: 1,
+      repositories: [{ url: "https://github.com/root-gh/dotfiles", owner: "root-gh", name: "dotfiles", private: false }],
+    });
+    assert.match((await page("root", true)("stadeum/github/granted", { installation: 999 })).error ?? "", /GitHub did not show that org's repositories: Not Found/);
   });
 
-  it("marks a repository already on stadeum/code's list, read through the graph by its contract", async () => {
-    await install(CODE_DIR);
-    // On the list as the Code app's Add writes it (its own case), and another forge's.
-    for (const [i, url] of ["https://github.com/Acme/app", "https://gitlab.com/acme/r001"].entries()) {
-      const run = await once(`seed-${i}`, "graph/create-node", { node_type: "Repository", node_data: { url, name: url.split("/").pop() } });
-      assert.equal(run.status, "success", JSON.stringify(run.error));
-    }
-    const out = await ok(page("root", true)("stadeum/github/repositories", { installation: 101 }));
-    assert.equal(out.code, true);
-    assert.deepEqual(out.repositories.filter((r: any) => r.listed).map((r: any) => r.url), ["https://github.com/acme/App"]);
-    // The personal account's: none of them listed.
-    const mine = await ok(page("root", true)("stadeum/github/repositories", { installation: 202 }));
-    assert.deepEqual(mine, { code: true, total: 1, repositories: [{ url: "https://github.com/root-gh/dotfiles", owner: "root-gh", name: "dotfiles", private: false, listed: false }] });
+  it("answers strut's git/repositories as the person: every installation's repositories, picked where the org picked them, archived left out", async () => {
+    const n = calls.length;
+    const run = await once("reach", "git/repositories", {}, "root");
+    assert.equal(run.status, "success", JSON.stringify(run.error));
+    const out = outOf(run);
+    assert.deepEqual(out.hosts, [{ host: "github.com" }]);
+    assert.equal(out.repositories.length, 101, "acme's 100 not archived, and root-gh's one");
+    assert.deepEqual(out.repositories[0], { url: "https://github.com/acme/App", name: "App", private: true, pushed: "2026-11-22T09:00:00Z", description: "The app", picked: true });
+    assert.deepEqual(
+      out.repositories.find((r: any) => r.name === "dotfiles"),
+      { url: "https://github.com/root-gh/dotfiles", name: "dotfiles", private: false, pushed: "2026-11-01T00:00:00Z" },
+      "granted with all of root-gh's: not picked",
+    );
+    assert.equal(out.repositories.find((r: any) => r.name === "web"), undefined, "archived: nothing is pushed there");
+    // As the person, with their own token: the orgs, then each org's every page.
+    assert.deepEqual(
+      since(n).map((c) => [c.url, c.auth]),
+      [
+        "https://api.github.com/user/installations?per_page=100&page=1",
+        "https://api.github.com/user/installations/101/repositories?per_page=100&page=1",
+        "https://api.github.com/user/installations/101/repositories?per_page=100&page=2",
+        "https://api.github.com/user/installations/202/repositories?per_page=100&page=1",
+      ].map((u) => [u, `Bearer ${T.root}`]),
+    );
+    // The package's own step answers the same, for anyone as themselves.
+    const own = await once("reach-own", "stadeum/github/repositories", {}, "root");
+    assert.equal(own.status, "success", JSON.stringify(own.error));
+    assert.deepEqual(outOf(own).repositories, out.repositories);
+  });
+
+  it("answers with what a pasted token reaches, and says when the person has no token", async () => {
+    await ok(page("dee", false)("stadeum/github/paste", { token: T.dee }));
+    const n = calls.length;
+    const run = await once("reach-pasted", "git/repositories", {}, "dee");
+    assert.equal(run.status, "success", JSON.stringify(run.error));
+    assert.deepEqual(outOf(run).repositories, [
+      { url: "https://github.com/acme/App", name: "App", private: true, pushed: "2026-11-22T09:00:00Z", description: "The app" },
+      { url: "https://github.com/dee-gh/notes", name: "notes", private: true, pushed: "2026-11-20T00:00:00Z" },
+    ]);
+    assert.deepEqual(
+      since(n).map((c) => [c.url, c.auth]),
+      [["https://api.github.com/user/repos?affiliation=owner%2Ccollaborator%2Corganization_member&sort=pushed&per_page=100&page=1", `Bearer ${T.dee}`]],
+    );
+    await ok(page("dee", false)("stadeum/github/disconnect"));
+    // No token of their own: GitHub is not asked, and the host says why.
+    const m = calls.length;
+    const none = await once("reach-none", "git/repositories", {}, "ada");
+    assert.equal(none.status, "success", JSON.stringify(none.error));
+    assert.deepEqual(outOf(none).repositories, []);
+    assert.equal(outOf(none).hosts.length, 1);
+    assert.equal(outOf(none).hosts[0].host, "github.com");
+    assert.ok(outOf(none).hosts[0].problem, "github.com says why it reached nothing");
+    assert.deepEqual(since(m), [], "GitHub not asked");
   });
 
   it("sends a token to GitHub's API alone, and never the deployment's", () => {
@@ -525,6 +579,9 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
   });
 
   it("puts no token in any output, error, run, event, node, file or log", async () => {
+    // A value the graph holds, to see the scan would find a token there.
+    const control = `control-${hex(6)}`;
+    assert.equal((await once("control", "graph/create-node", { node_type: "Concept", node_data: { name: control, description: "A value to find in the graph's bytes." } })).status, "success");
     const leaks = (text: string) => ALL_TOKENS.filter((t) => text.includes(t));
     assert.deepEqual(leaks(seen.join("\n")), [], "what a page or a workflow was given");
     assert.deepEqual(leaks(JSON.stringify([...store.events.entries()])), [], "events");
@@ -536,14 +593,14 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
       (await readdir(dir, { withFileTypes: true })).flatMap((e) => (e.isDirectory() ? [] : [join(dir, e.name)])).concat(
         ...(await Promise.all((await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => walk(join(dir, e.name))))),
       );
-    let control = false;
+    let found = false;
     for (const file of await walk(root)) {
       const bytes = (await readFile(file)).toString("latin1");
       assert.deepEqual(leaks(bytes), [], file);
-      // The scan reads the graph's own bytes: the address seeded above is in them.
-      control ||= bytes.includes("https://github.com/Acme/app");
+      // The scan reads the graph's own bytes: the value written above is in them.
+      found ||= bytes.includes(control);
     }
-    assert.ok(control, "the scan found a value the graph holds, so it would find a token there");
+    assert.ok(found, "the scan found a value the graph holds, so it would find a token there");
     assert.ok(seen.length > 20 && logged.length > 0, "and it read what pages and logs were given");
   });
 });
