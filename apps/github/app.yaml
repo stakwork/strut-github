@@ -1,5 +1,5 @@
 title: GitHub
-description: Your GitHub account on this box. Connect it, or paste a token you made, see whom you are connected as, and disconnect. An admin also sees the box's GitHub orgs and their repositories, and adds them to the Code app's list.
+description: Connect your GitHub account. Admins pick which repos agents work on.
 icon: git-pull-request
 entry: src/App.tsx
 grants:
