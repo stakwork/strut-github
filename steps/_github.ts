@@ -1,7 +1,7 @@
 /**
  * What every step of stadeum/github shares: who may call it, the person's
- * own token, GitHub's API through strut's `http`, and the box's list of
- * repositories as the stadeum/code package keeps it in the graph.
+ * own token, GitHub's API through strut's `http`, and what that token
+ * reaches, for strut's `git/repositories`.
  *
  * Every token is a person's own. A step reads and writes the run's
  * person's own `GITHUB_TOKEN` (`secrets.own`, which strut gives a package
@@ -13,8 +13,6 @@
 
 /** This package's own app: where a person's token is changed, and where an admin sees the box's GitHub orgs. */
 export const APP = "stadeum/github/github";
-/** The code package's app, where the box's list of repositories is changed. */
-export const CODE_APP = "stadeum/code/code";
 /** The secret a person's GitHub token is, as strut's github.com git entry and the connect seam name it. */
 export const SECRET = "GITHUB_TOKEN";
 /** GitHub's API: the only address a token is sent to. */
@@ -285,75 +283,80 @@ export async function installationsOf(ctx: Ctx, token: string): Promise<Installa
 
 const FULL_NAME = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 
+/**
+ * One repository a person's token reaches, in strut's `git/repositories`
+ * contract (stakwork/strut#851): `{ url, name, private?, pushed?,
+ * description? }`, and `picked` when it was granted one by one.
+ */
 export interface Reached {
-  /** Its https address, as the Code app takes it. */
+  /** Its https address. */
   url: string;
-  owner: string;
   name: string;
   private: boolean;
-  archived?: true;
-  /** On the box's list (stadeum/code's), when that package is installed. */
-  listed: boolean;
+  /** When it was last pushed to, ISO 8601. */
+  pushed?: string;
+  description?: string;
+  /** Picked for an installation of selected repositories, not granted
+   *  with all of its owner's. */
+  picked?: true;
 }
 
-/** The repositories an installation grants a person's token: GitHub's
- *  `GET /user/installations/{id}/repositories`, by name. */
-export async function repositoriesOf(ctx: Ctx, token: string, installation: number): Promise<{ repositories: Omit<Reached, "listed">[]; total: number }> {
-  const { items, total } = await pages<Record<string, unknown>>(ctx, token, `/user/installations/${installation}/repositories`, "repositories", "that org's repositories");
-  const out: Omit<Reached, "listed">[] = [];
-  for (const r of items) {
-    const m = FULL_NAME.exec(typeof r["full_name"] === "string" ? r["full_name"] : "");
-    if (!m || m[2] === "." || m[2] === "..") continue;
-    out.push({ url: `${WEB}/${m[1]}/${m[2]}`, owner: m[1]!, name: m[2]!, private: r["private"] === true, ...(r["archived"] === true ? { archived: true as const } : {}) });
-  }
-  out.sort((a, b) => a.name.localeCompare(b.name) || a.owner.localeCompare(b.owner));
-  return { repositories: out, total };
-}
-
-// ── the box's list: stadeum/code's, through the graph ─────────────────────
-
-/** stadeum/code's node for one repository the box works on (its Repositories page: the contract). */
-const REPOSITORY = "Repository";
-
-/** A github.com repository's address, one way: GitHub's names ignore case. */
-export function githubKey(url: string): string | undefined {
-  let u: URL;
-  try {
-    u = new URL(url);
-  } catch {
-    return undefined;
-  }
-  if (u.protocol !== "https:" || u.hostname.toLowerCase() !== "github.com" || u.port) return undefined;
-  const segs = u.pathname.split("/").filter(Boolean);
-  if (segs.length !== 2) return undefined;
-  return `${segs[0]}/${segs[1]!.replace(/\.git$/i, "")}`.toLowerCase();
+/** A repository as GitHub's lists give it, in the contract's shape; none
+ *  for an archived one (nothing is pushed there) or a name that is not one. */
+function reached(r: Record<string, unknown>, picked: boolean): Reached | undefined {
+  const m = FULL_NAME.exec(typeof r["full_name"] === "string" ? r["full_name"] : "");
+  if (!m || m[2] === "." || m[2] === ".." || r["archived"] === true) return undefined;
+  const pushed = typeof r["pushed_at"] === "string" && !Number.isNaN(Date.parse(r["pushed_at"])) ? r["pushed_at"] : undefined;
+  const description = typeof r["description"] === "string" ? scrub(r["description"]).slice(0, 200) : "";
+  return {
+    url: `${WEB}/${m[1]}/${m[2]}`,
+    name: m[2]!,
+    private: r["private"] === true,
+    ...(pushed ? { pushed } : {}),
+    ...(description ? { description } : {}),
+    ...(picked ? { picked: true as const } : {}),
+  };
 }
 
 /**
- * The github.com repositories on the box's list, by `githubKey`: every
- * `Repository` node's `url`, read through strut's own `graph/find` from
- * this step's context, as stadeum/code's contract says. None (undefined)
- * when the box has no such type: that package is not installed, or the
- * box has no graph. This package does not require it.
+ * Every repository a person's own token reaches, for strut's
+ * `git/repositories`. A token the App gave: each installation it sees
+ * (GitHub's `GET /user/installations/{id}/repositories`), a suspended one
+ * left out, each repository `picked` when its installation was given
+ * selected repositories. A token the person pasted: GitHub's `GET
+ * /user/repos`, which lists what a personal token reaches. Archived
+ * repositories are left out; each list is read to 1,000.
  */
-export async function listed(ctx: Ctx): Promise<Set<string> | undefined> {
-  const def = ctx.registry?.["graph/find"];
-  if (!def) return undefined;
-  const keys = new Set<string>();
-  let cursor: string | undefined;
-  do {
-    // A graph step answers a failure as text; a type the box lacks is one.
-    const out = await def.run(def.input.parse({ node_type: REPOSITORY, limit: 500, ...(cursor ? { cursor } : {}) }), ctx).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
-    if (typeof out === "string") {
-      if (/unknown node type/i.test(out)) return undefined;
-      throw new Error(`the box's list of repositories could not be read: ${out}`);
+export async function reachable(ctx: Ctx, token: string): Promise<Reached[]> {
+  const seen = new Map<string, Reached>();
+  const add = (r: Record<string, unknown>, picked: boolean) => {
+    const one = reached(r, picked);
+    const key = one?.url.toLowerCase();
+    if (one && key && !seen.has(key)) seen.set(key, one);
+  };
+  if (kindOf(token) === "app") {
+    for (const i of await installationsOf(ctx, token)) {
+      if (i.suspended) continue;
+      const { items } = await pages<Record<string, unknown>>(ctx, token, `/user/installations/${i.id}/repositories`, "repositories", `${i.account}'s repositories`);
+      for (const r of items) add(r, i.repositories === "selected");
     }
-    const page = out as { nodes?: Array<{ properties?: Record<string, unknown> }>; cursor?: string };
-    for (const n of page.nodes ?? []) {
-      const key = typeof n.properties?.["url"] === "string" ? githubKey(n.properties["url"]) : undefined;
-      if (key) keys.add(key);
-    }
-    cursor = page.cursor;
-  } while (cursor);
-  return keys;
+  } else {
+    const items = await listed(ctx, token, "/user/repos", { affiliation: "owner,collaborator,organization_member", sort: "pushed" }, "the repositories your token reaches");
+    for (const r of items) add(r, false);
+  }
+  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name) || a.url.localeCompare(b.url));
+}
+
+/** Every page of one of GitHub's plain lists (an array, not an object),
+ *  up to `PAGES` of them. */
+async function listed(ctx: Ctx, token: string, path: string, query: Record<string, string>, what: string): Promise<Array<Record<string, unknown>>> {
+  const items: Array<Record<string, unknown>> = [];
+  for (let page = 1; page <= PAGES; page++) {
+    const res = await github(ctx, path, { token, query: { ...query, per_page: PER_PAGE, page } });
+    if (!res.ok) throw refused(res, token, what);
+    const got = Array.isArray(res.body) ? (res.body as Array<Record<string, unknown>>) : [];
+    items.push(...got);
+    if (got.length < PER_PAGE) break;
+  }
+  return items;
 }

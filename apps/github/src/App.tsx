@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { appLink, useGraphChanges, useHost, useShareLink, useStrutClient } from "@strut/kit";
-import { Building2, Copy, ExternalLink, GitPullRequest, KeyRound, Lock, Plug, Plus, User } from "lucide-react";
+import { useHost, useShareLink, useStrutClient } from "@strut/kit";
+import { Building2, ExternalLink, GitPullRequest, KeyRound, Plug, Plus, User } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -16,7 +16,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { seamLink } from "./links";
 
@@ -25,9 +24,6 @@ const ME = "stadeum/github/me";
 const PASTE = "stadeum/github/paste";
 const DISCONNECT = "stadeum/github/disconnect";
 const INSTALLATIONS = "stadeum/github/installations";
-const REPOSITORIES = "stadeum/github/repositories";
-/** The code package's app, where the box's list of repositories is changed. */
-const CODE_APP = "stadeum/code/code";
 /** Where a person makes a fine-grained token on GitHub. */
 const NEW_TOKEN = "https://github.com/settings/personal-access-tokens/new";
 
@@ -54,19 +50,6 @@ interface Installation {
   repositories: "all" | "selected";
   suspended?: boolean;
   manage: string;
-}
-interface Reached {
-  url: string;
-  owner: string;
-  name: string;
-  private: boolean;
-  archived?: boolean;
-  listed: boolean;
-}
-interface Repositories {
-  code: boolean;
-  repositories: Reached[];
-  total: number;
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^(step_run: |Error: )+/, "");
@@ -302,15 +285,14 @@ function PasteForm({ busy, onPaste, onOpenGitHub }: { busy: boolean; onPaste: (t
   );
 }
 
-/** For an admin: the box's GitHub orgs, each with what it grants. */
+/** For an admin: the box's GitHub orgs, each with what it grants and a
+ *  way to change it on GitHub. Which repositories the box works on is
+ *  chosen where workspaces are made, from what each person's own token
+ *  reaches (strut's git/repositories, which this package answers). */
 function Orgs({ install, busy }: { install?: string; busy: boolean }) {
   const client = useStrutClient();
   const host = useHost();
   const orgs = useQuery({ queryKey: ["github", "installations"], queryFn: () => client.run<{ installations: Installation[] }>(INSTALLATIONS) });
-  const [adding, setAdding] = useState<Reached>();
-  // The box's list is stadeum/code's: read again whenever one of its
-  // repositories is written, by the Code app beside this one or anyone.
-  const { rev } = useGraphChanges(["Repository"]);
   const list = orgs.data?.installations;
 
   return (
@@ -326,6 +308,7 @@ function Orgs({ install, busy }: { install?: string; busy: boolean }) {
           </Button>
         )}
       </div>
+      <p className="text-xs text-muted-foreground">What an org grants the App is what people pick from when they make a workspace. Change it on GitHub.</p>
       {orgs.isLoading && <p className="text-sm text-muted-foreground">Asking GitHub…</p>}
       {orgs.error && (
         <Alert variant="destructive">
@@ -337,125 +320,21 @@ function Orgs({ install, busy }: { install?: string; busy: boolean }) {
           The App is on no org your account sees.{install ? " Add a GitHub org to install it on one." : ""}
         </p>
       )}
-      {list?.map((i) => <Org key={i.id} installation={i} rev={rev} onAdd={setAdding} />)}
-      {adding && <AddInCode repository={adding} onClose={() => setAdding(undefined)} />}
+      {list?.map((i) => (
+        <Card key={i.id} className="gap-2 py-3">
+          <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-4">
+            {i.type === "Organization" ? <Building2 className="size-4 text-muted-foreground" /> : <User className="size-4 text-muted-foreground" />}
+            <CardTitle className="font-mono text-base">{i.account}</CardTitle>
+            <span className="text-xs text-muted-foreground">{i.repositories === "all" ? "every repository" : "the repositories picked on GitHub"}</span>
+            {i.suspended && <Badge variant="destructive">suspended</Badge>}
+            <div className="flex-1" />
+            <Button size="sm" variant="ghost" onClick={() => void host.openLink(i.manage)}>
+              Change repositories
+              <ExternalLink className="size-3" />
+            </Button>
+          </CardHeader>
+        </Card>
+      ))}
     </section>
-  );
-}
-
-function Org({ installation: i, rev, onAdd }: { installation: Installation; rev: number; onAdd: (r: Reached) => void }) {
-  const client = useStrutClient();
-  const host = useHost();
-  const repos = useQuery({
-    queryKey: ["github", "repositories", i.id, rev],
-    queryFn: () => client.run<Repositories>(REPOSITORIES, { installation: i.id }),
-    enabled: !i.suspended,
-    // A new read keeps the last one on screen until it answers.
-    placeholderData: (last) => last,
-  });
-  const data = repos.data;
-  return (
-    <Card className="gap-2 py-4">
-      <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-4">
-        {i.type === "Organization" ? <Building2 className="size-4 text-muted-foreground" /> : <User className="size-4 text-muted-foreground" />}
-        <CardTitle className="font-mono text-base">{i.account}</CardTitle>
-        <span className="text-xs text-muted-foreground">{i.repositories === "all" ? "every repository" : "the repositories picked on GitHub"}</span>
-        {i.suspended && <Badge variant="destructive">suspended</Badge>}
-        <div className="flex-1" />
-        <Button size="sm" variant="ghost" onClick={() => void host.openLink(i.manage)}>
-          Change repositories
-          <ExternalLink className="size-3" />
-        </Button>
-      </CardHeader>
-      <CardContent className="flex flex-col divide-y px-4">
-        {repos.isLoading && <p className="py-2 text-sm text-muted-foreground">Reading its repositories…</p>}
-        {repos.error && <p className="py-2 text-sm text-destructive">{message(repos.error)}</p>}
-        {data && !data.code && (
-          <p className="py-2 text-xs text-muted-foreground">
-            The box's list of repositories is kept by the Code app (the stadeum/code package), which is not installed here.
-          </p>
-        )}
-        {data && !data.repositories.length && <p className="py-2 text-sm text-muted-foreground">It grants no repositories.</p>}
-        {data?.repositories.map((r) => (
-          <div key={r.url} className="flex items-center gap-3 py-2">
-            <div className="flex min-w-0 flex-1 flex-col">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{r.name}</span>
-                {r.private && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Lock className="size-3" />
-                    private
-                  </span>
-                )}
-                {r.archived && <Badge variant="outline">archived</Badge>}
-              </div>
-              <span className="truncate text-xs text-muted-foreground">{r.url}</span>
-            </div>
-            {data.code &&
-              (r.listed ? (
-                <Badge variant="secondary">on the box</Badge>
-              ) : (
-                <Button size="sm" variant="outline" onClick={() => onAdd(r)}>
-                  Add…
-                </Button>
-              ))}
-          </div>
-        ))}
-        {data && data.total > data.repositories.length && (
-          <p className="py-2 text-xs text-muted-foreground">
-            The first {data.repositories.length} of {data.total}. Add any other by its address in the Code app.
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** The box's list is the Code app's: hand the admin there with the address. */
-function AddInCode({ repository: r, onClose }: { repository: Reached; onClose: () => void }) {
-  const host = useHost();
-  const [copied, setCopied] = useState<"yes" | "no">();
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(r.url);
-      setCopied("yes");
-    } catch {
-      setCopied("no");
-    }
-  };
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            Add {r.owner}/{r.name} to the box
-          </DialogTitle>
-          <DialogDescription>
-            The box's repositories are added in the Code app. Open it and add this address there; it is below to copy, in case Code does not fill it in.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex gap-2">
-          <Input readOnly value={r.url} onFocus={(e) => e.currentTarget.select()} aria-label="The repository's address" className="font-mono text-xs" />
-          <Button variant="outline" onClick={() => void copy()}>
-            <Copy className="size-4" />
-            {copied === "yes" ? "Copied" : "Copy"}
-          </Button>
-        </div>
-        {copied === "no" && <p className="text-xs text-muted-foreground">This page may not copy: select the address and copy it.</p>}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-          <Button
-            onClick={() => {
-              void host.openLink(appLink(CODE_APP, { add: r.url }));
-              onClose();
-            }}
-          >
-            Open Code
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

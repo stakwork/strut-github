@@ -7,21 +7,23 @@ Every token is a person's own. There is no box token, and nothing here is
 "for the box": a token is the person's actor secret `GITHUB_TOKEN`, read
 and written only as theirs (`secrets.own`), never a deployment's. The
 package keeps nothing of its own: tokens are strut's secrets, and the box's
-list of repositories is the
-[`stadeum/code`](https://github.com/stakwork/strut-code) package's.
+workspaces and their repositories are the
+[`stadeum/code`](https://github.com/stakwork/strut-code) package's. What a
+person's token reaches on GitHub is this package's to say, through strut's
+`git/repositories`: people pick from it where workspaces are made.
 
 ## What it ships
 
 | Part | What |
 | --- | --- |
-| `strut.yaml` | `requires.optional: [GITHUB_TOKEN]`; `provides.secrets: [GITHUB_TOKEN]` (its steps manage each person's own value); `provides.git` for `github.com` with that secret (strut's own entry says the same); `job.tools: [github/create-pr, github/pr-status, github/fetch-pr]` (strut's steps); `schedules:` runs `pr-checks` every 5 minutes |
+| `strut.yaml` | `requires.optional: [GITHUB_TOKEN]`; `provides.secrets: [GITHUB_TOKEN]` (its steps manage each person's own value); `provides.git` for `github.com` with that secret (strut's own entry says the same), naming its forge steps for strut to pick by host: `repositories: repositories` (strut's `git/repositories`) and `pull_request: github/create-pr` (strut's `git/pull-request`); `job.tools: [github/create-pr, github/pr-status, github/fetch-pr]` (strut's steps); `schedules:` runs `pr-checks` every 5 minutes |
 | `workflows/pr-checks.yaml` | One step, strut's `job/pr-checks`: a job whose pull request's checks all finished with one failed gets one turn to fix them ("When the checks fail later", below) |
 | `apps/github/` | **GitHub**, every person's app (below) |
 | `steps/me.ts` | Whom the person is connected as: their own token alone, asked of GitHub's `GET /user`. Says whether the token came from the App or was pasted, and whether GitHub still takes it. Everyone's |
 | `steps/paste.ts` | Keeps a personal access token the person made, as their own secret, once GitHub says whom it is. From the GitHub app alone, by the person themselves |
 | `steps/disconnect.ts` | Removes the person's token from the box; revokes it at GitHub first when the App gave it. From the GitHub app alone, by the person themselves |
 | `steps/installations.ts` | The box's GitHub orgs: the App's installations the admin's own token sees. An admin's call from the GitHub app alone |
-| `steps/repositories.ts` | What one org grants the admin's token, each marked when it is already on the box's list. An admin's call from the GitHub app alone |
+| `steps/repositories.ts` | Every github.com repository the run's person reaches with their own token, in strut's `git/repositories` contract: through the App, each installation's, `picked` when the org picked it; with a pasted token, GitHub's `/user/repos`. Archived ones are left out. Anyone's, as themselves |
 | `steps/_github.ts` | What the steps share |
 
 ### The GitHub app
@@ -62,17 +64,19 @@ For an admin, in the same app:
   or `github.com/settings/installations/<id>`), and **Add a GitHub org**
   (the seam with `install=1`). GitHub lists installations only to a token
   its App gave: a pasted token is told so.
-- **Repositories**, by installation, up to 1,000 each: each one marked **on
-  the box** when stadeum/code's list has it. The list is read through the
-  graph by that package's contract (its `Repository` nodes' `url`, through
-  strut's own `graph/find`), without requiring the package, and read again
-  whenever a `Repository` node is written (`graph/changes`). Without
-  stadeum/code the app says the box keeps no list.
-- **Add…** for a repository not on the list: the list is changed only in
-  the Code app, by an admin (stadeum/code holds that to its own app), so
-  this app hands the admin there. It opens the Code app with
-  `{ add: <the address> }` as its input and shows the address to copy.
-  The Code app does not read that input yet: see below.
+
+There is no repository list here, and no Add… (stadeum's
+`plans/software.md` §3.1, revised 2026-11-23). Granting the App a
+repository is not choosing to work on it: the box works on a repository
+once a person puts it in a workspace, where workspaces are made (the Code
+app), picking from what their own token reaches. That list is this
+package's `repositories` step, which strut's `git/repositories` calls as
+the person, by the `provides.git` entry for `github.com`, so the package's
+code names neither the Code app nor its package.
+
+A repository's webhook, made when it joins the box (`on: created:
+Repository`), waits for strut's webhook routes (stadeum's
+`plans/software.md` §5, item 7): the package declares no `on:` yet.
 
 ### Who may call what
 
@@ -81,10 +85,11 @@ For an admin, in the same app:
   name strut signs for the page, not a builder's preview, not a host's
   call). Another app that lists these steps among its grants, a workflow, or
   the job agent changes nothing.
-- `installations` and `repositories` are an admin's call from this app
-  (`ctx.app.admin`), held as stadeum/code holds its own changes. A member's
-  call and an admin's call from another app are refused.
-- `me` is anyone's: it reads the caller's own token.
+- `installations` is an admin's call from this app (`ctx.app.admin`). A
+  member's call and an admin's call from another app are refused.
+- `me` and `repositories` are anyone's: each reads the caller's own token.
+  `repositories` is what strut's `git/repositories` asks, as the run's
+  person, wherever it is called from.
 
 ### Tokens
 
@@ -132,12 +137,15 @@ of those pages. The real fix is strut's (see "What strut should change").
 
 ## What a box needs
 
-- **A strut with stakwork/strut#800** (on strut's `main` from 9c3657a8):
-  a package's `job:` granting strut's own steps. An older strut
-  refuses the install (`job.tools: "github/create-pr" matches no step of the
-  package`). It also needs #789 (`provides.secrets`, `secrets.own`) and
-  #798 (`provides.git`), both before it. Strut has no way yet for a package
-  to say which strut it needs.
+- **A strut with the package seams of stakwork/strut#851:** the
+  `repositories` and `pull_request` fields of a `provides.git` entry, which
+  strut's `git/repositories` and `git/pull-request` pick by host. An older
+  strut refuses the manifest (its schema is strict). Do not promote this
+  to `stable` until #851 is merged and released: the Software bundle
+  follows `stable`. It also needs #800 (a package's `job:` granting
+  strut's own steps), #789 (`provides.secrets`, `secrets.own`) and #798
+  (`provides.git`). Strut has no way yet for a package to say which strut
+  it needs.
 - **For Connect GitHub: Stadeum's connect seam and a GitHub App,** with
   strut served at `strut.<box>` beside Stadeum at `<box>`, as stadeum's
   compose does ("Where Connect leads"). The seam is stadeum-ui's (`/api/connect/github`, `plans/software.md` §2.1); it is
@@ -148,15 +156,17 @@ of those pages. The real fix is strut's (see "What strut should change").
   cannot tell beforehand: strut tells an app its host's page, not what the
   host offers.
 - **Without the seam or the App, a pasted token works**: Paste, Connected
-  as, Disconnect, git and pull requests. GitHub orgs need a token the App
-  gave, so an admin there adds repositories by address in the Code app.
-- **stadeum/code**, for the box's list. Without it the app still connects
-  and shows orgs.
+  as, Disconnect, git and pull requests, and what the token reaches for
+  workspaces (GitHub's `/user/repos`). GitHub orgs need a token the App
+  gave.
 
 ### What a pull request needs
 
-The job agent is granted `github/create-pr`, which opens a pull request as
-the job's person with their own `GITHUB_TOKEN`. It then reads the pull
+The job agent opens a pull request with strut's `git/pull-request`, which
+stadeum/code grants and which calls `github/create-pr` for a github.com
+repository, as this package's `provides.git` entry says. It is also
+granted `github/create-pr` itself. Either opens it as the job's person
+with their own `GITHUB_TOKEN`. It then reads the pull
 request as that person too: `github/pr-status` for its checks, and
 `github/fetch-pr` for what reviewers said. Where nothing on the box can
 build the change (an Android app on a pod without Android), the
@@ -166,10 +176,9 @@ Actions job's whole log to a file the agent searches with `rg`, since the
 cause sits far above the job's end. That needs a strut whose `pr-status`
 takes `logs`, and a token that may read Actions: the App's
 **Actions: read** permission, or a pasted token with the same. Without it
-the check says why it has no log, and its pass or fail still reads. Pushing the branch first
-is `git/push`, which stadeum/code should grant (a forge-neutral step);
-until it does, a job without a pod hands over a diff. The guards on
-`git/push` are stakwork/strut#802.
+the check says why it has no log, and its pass or fail still reads.
+Pushing the branch first is strut's `git/push`, which stadeum/code grants
+(its guards are stakwork/strut#802).
 
 ### When the checks fail later
 
@@ -203,16 +212,6 @@ real parent where the browser says (`location.ancestorOrigins`). With that,
 `strut/page` is the host's, and the host could say what it offers (a seam,
 whether the box has the App) so the package names no route.
 
-## What stakwork/strut-code's Code app should accept
-
-The Code app should read its tool input (`useToolInput()`) and, when it
-holds `add`, an https address, put that address in its Add field for an
-admin, without adding it: the admin still clicks **Add a repository**. This
-app already opens Code with that input
-(`appLink("stadeum/code/code", { add: "<url>" })`), so nothing changes here
-when Code takes it. Until then the admin copies the address the dialog
-shows.
-
 ## Installing it
 
 A box follows the `stable` branch:
@@ -241,21 +240,24 @@ LadybugDB file, and drives it as the GitHub app's page does: a member's
 call, an admin's, and an admin's call from another package's app. GitHub's
 API is stood in for through strut's own `http` (`createStrut({ services: {
 http } })`): it answers `api.github.com` for made-up tokens, records every
-request and refuses any other address. stadeum/code (`STRUT_CODE_DIR`, a
-checkout of stakwork/strut-code) is installed partway, to see a repository
-on its list marked so. The deployment is given a `GITHUB_TOKEN`, to see
+request and refuses any other address. What a person's token reaches is
+asked through strut's `git/repositories`, as strut asks it, for a token the
+App gave (every installation, `picked` where the org picked), a pasted one
+(`/user/repos`) and none. The deployment is given a `GITHUB_TOKEN`, to see
 that no step ever sends it. The last test looks for every token in what
 pages and workflows were given, the runs and their events, the logs, and
 every file under the data directory (the graph's among them).
 
 ```bash
-STRUT_DIR=../strut STRUT_CODE_DIR=../strut-code npm test
+STRUT_DIR=../strut npm test
 ```
 
 `STRUT_DIR` is a strut checkout with its install (`yarn install
---frozen-lockfile --ignore-scripts`, and the same in `kit/`).
-`.github/workflows/checks.yml` runs it on every pull request and push to
-`main`, against strut's `main` and strut-code's `main`.
+--frozen-lockfile --ignore-scripts`, and the same in `kit/`), with the
+package seams (stakwork/strut#851). `.github/workflows/checks.yml` runs it
+on every pull request and push to `main`: against strut's `main` once it
+has `git/repositories`, and until then against #851's branch,
+`plan/package-seams`.
 
 To try the app, install the checkout into a strut of your own:
 

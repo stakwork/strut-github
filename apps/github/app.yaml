@@ -1,13 +1,13 @@
 title: GitHub
-description: Connect your GitHub account. Admins pick which repos agents work on.
+description: Connect your GitHub account. Admins see the box's GitHub orgs.
 icon: git-pull-request
 entry: src/App.tsx
 grants:
   workflows: []
   # `me` is everyone's; `paste` and `disconnect` change the viewer's own
-  # token; `installations` and `repositories` are an admin's, and refuse
-  # anyone else. `graph/changes`: the repositories read again when the
-  # box's list (stadeum/code's Repository nodes) changes.
-  steps: [stadeum/github/me, stadeum/github/paste, stadeum/github/disconnect, stadeum/github/installations, stadeum/github/repositories, graph/changes]
+  # token; `installations` is an admin's, and refuses anyone else. What a
+  # person's token reaches is listed where workspaces are made, through
+  # strut's git/repositories, not here.
+  steps: [stadeum/github/me, stadeum/github/paste, stadeum/github/disconnect, stadeum/github/installations]
   sqlite: false
   automations: []

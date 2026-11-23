@@ -1,5 +1,5 @@
 package: stadeum/github
-version: 0.3.0
+version: 0.4.0
 description: GitHub integration for the Stadeum GitHub App. Run agents in your repos and open PRs.
 requires:
   # Each person's own token. Connect GitHub (stadeum's connect seam) writes
@@ -9,9 +9,12 @@ requires:
   optional: [GITHUB_TOKEN]
 provides:
   secrets: [GITHUB_TOKEN]
-  # Which secret git reads for github.com: strut's own entry says the same.
+  # Which secret git reads for github.com (strut's own entry says the same),
+  # and this forge's steps, which strut picks by host (stakwork/strut#851):
+  # `repositories` answers strut's git/repositories, what a person's own
+  # token reaches; strut's own github/create-pr answers git/pull-request.
   git:
-    - { host: github.com, secret: GITHUB_TOKEN }
+    - { host: github.com, secret: GITHUB_TOKEN, repositories: repositories, pull_request: github/create-pr }
 job:
   # Strut's own steps, each as the job's person with their own token: a code
   # change ends as a pull request (create-pr), and the job reads it after:
