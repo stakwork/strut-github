@@ -314,16 +314,20 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
     await rm(root, { recursive: true, force: true, maxRetries: 5 });
   });
 
-  it("installs whole: its app, the token it provides and serves to git, and strut's github/create-pr for the job agent", async () => {
+  it("installs whole: its app, the token it provides and serves to git, and strut's PR steps for the job agent", async () => {
     const { packages } = await (await strut.app.request("/packages")).json();
     const pkg = packages.find((p: any) => p.package === "stadeum/github");
     assert.ok(pkg, "installed");
-    assert.equal(pkg.version, "0.1.1");
+    assert.equal(pkg.version, "0.2.0");
     assert.deepEqual(pkg.provides?.secrets, ["GITHUB_TOKEN"]);
     assert.deepEqual(pkg.provides?.git, [{ host: "github.com", secret: "GITHUB_TOKEN" }]);
     const job = await strut.workspace.getWorkflow("job");
     assert.ok(job.params.tools.includes("github/create-pr"), `the job agent is granted strut's github/create-pr: ${job.params.tools}`);
     assert.ok(!(job.params.approve ?? []).includes("github/create-pr"), "and it does not ask first: the pull request is the review");
+    for (const read of ["github/pr-status", "github/fetch-pr"]) {
+      assert.ok(job.params.tools.includes(read), `the job agent reads its pull request with strut's ${read}: ${job.params.tools}`);
+      assert.ok(!(job.params.approve ?? []).includes(read), `${read} only reads: no ask`);
+    }
     const manifest = await strut.apps.manifestOf(APP);
     assert.deepEqual([...manifest.manifest.grants.steps].sort(), [...STEPS, "graph/changes"].sort());
     assert.equal(manifest.manifest.admin, undefined, "everyone's app");

@@ -14,7 +14,7 @@ list of repositories is the
 
 | Part | What |
 | --- | --- |
-| `strut.yaml` | `requires.optional: [GITHUB_TOKEN]`; `provides.secrets: [GITHUB_TOKEN]` (its steps manage each person's own value); `provides.git` for `github.com` with that secret (strut's own entry says the same); `job.tools: [github/create-pr]` (strut's step) |
+| `strut.yaml` | `requires.optional: [GITHUB_TOKEN]`; `provides.secrets: [GITHUB_TOKEN]` (its steps manage each person's own value); `provides.git` for `github.com` with that secret (strut's own entry says the same); `job.tools: [github/create-pr, github/pr-status, github/fetch-pr]` (strut's steps) |
 | `apps/github/` | **GitHub**, every person's app (below) |
 | `steps/me.ts` | Whom the person is connected as: their own token alone, asked of GitHub's `GET /user`. Says whether the token came from the App or was pasted, and whether GitHub still takes it. Everyone's |
 | `steps/paste.ts` | Keeps a personal access token the person made, as their own secret, once GitHub says whom it is. From the GitHub app alone, by the person themselves |
@@ -155,7 +155,17 @@ of those pages. The real fix is strut's (see "What strut should change").
 ### What a pull request needs
 
 The job agent is granted `github/create-pr`, which opens a pull request as
-the job's person with their own `GITHUB_TOKEN`. Pushing the branch first
+the job's person with their own `GITHUB_TOKEN`. It then reads the pull
+request as that person too: `github/pr-status` for its checks, and
+`github/fetch-pr` for what reviewers said. Where nothing on the box can
+build the change (an Android app on a pod without Android), the
+repository's CI is where it runs, so a failed check is the agent's to read
+and fix. `github/pr-status { logs: true }` writes each failed GitHub
+Actions job's whole log to a file the agent searches with `rg`, since the
+cause sits far above the job's end. That needs a strut whose `pr-status`
+takes `logs`, and a token that may read Actions: the App's
+**Actions: read** permission, or a pasted token with the same. Without it
+the check says why it has no log, and its pass or fail still reads. Pushing the branch first
 is `git/push`, which stadeum/code should grant (a forge-neutral step);
 until it does, a job without a pod hands over a diff. The guards on
 `git/push` are stakwork/strut#802.
