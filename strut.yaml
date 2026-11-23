@@ -1,6 +1,6 @@
 package: stadeum/github
-version: 0.1.0
-description: GitHub for the box's people. Each person connects their own account (the box's connect seam, or a token they paste), sees whom they are connected as and disconnects. An admin sees the box's GitHub orgs and picks repositories for the Code app's list. It serves github.com's token to git, and gives the job agent strut's github/create-pr.
+version: 0.1.1
+description: GitHub integration for the Stadeum GitHub App. Run agents in your repos and open PRs.
 requires:
   # Each person's own token. Connect GitHub (stadeum's connect seam) writes
   # it; Paste keeps one a person made; Disconnect deletes it. The steps read

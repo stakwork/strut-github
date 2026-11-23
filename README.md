@@ -1,11 +1,7 @@
 # strut-github
 
-The `stadeum/github` package for [strut](https://github.com/stakwork/strut):
-each person connects their own GitHub account to the box, sees whom they
-are connected as, and disconnects; an admin sees the box's GitHub orgs and
-picks repositories for the box's list. It serves github.com's token to git,
-and gives the job agent strut's `github/create-pr`, so a change to one of
-the box's repositories can end as a pull request.
+GitHub for Stadeum. Connect your account through the Stadeum GitHub App,
+and agents work in your repos and open PRs as you.
 
 Every token is a person's own. There is no box token, and nothing here is
 "for the box": a token is the person's actor secret `GITHUB_TOKEN`, read

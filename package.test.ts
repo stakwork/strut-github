@@ -318,7 +318,7 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
     const { packages } = await (await strut.app.request("/packages")).json();
     const pkg = packages.find((p: any) => p.package === "stadeum/github");
     assert.ok(pkg, "installed");
-    assert.equal(pkg.version, "0.1.0");
+    assert.equal(pkg.version, "0.1.1");
     assert.deepEqual(pkg.provides?.secrets, ["GITHUB_TOKEN"]);
     assert.deepEqual(pkg.provides?.git, [{ host: "github.com", secret: "GITHUB_TOKEN" }]);
     const job = await strut.workspace.getWorkflow("job");
