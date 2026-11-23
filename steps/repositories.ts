@@ -9,7 +9,7 @@ export default defineStep({
     "the repositories that token reaches. Each: its https `url`, `name`, whether it is `private`, when it was `pushed` and its `description`. Archived repositories are left out. " +
     "It changes nothing: workspaces are made from these elsewhere.",
   effect: "read",
-  input: z.object({}),
+  input: z.object({ host: z.string().optional().describe("The host strut asks for: github.com, the only one this package serves") }),
   output: z.object({
     repositories: z.array(
       z.object({

@@ -330,8 +330,8 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
     assert.ok(pkg, "installed");
     assert.equal(pkg.version, "0.4.0");
     assert.deepEqual(pkg.provides?.secrets, ["GITHUB_TOKEN"]);
-    // Its forge's steps by host (stakwork/strut#851): its own `repositories`, and strut's github/create-pr.
-    assert.deepEqual(pkg.provides?.git, [{ host: "github.com", secret: "GITHUB_TOKEN", repositories: "repositories", pull_request: "github/create-pr" }]);
+    // Its forge's steps by host (stakwork/strut#851): its own `repositories`, by its full type, and strut's github/create-pr.
+    assert.deepEqual(pkg.provides?.git, [{ host: "github.com", secret: "GITHUB_TOKEN", repositories: "stadeum/github/repositories", pull_request: "github/create-pr" }]);
     const job = await strut.workspace.getWorkflow("job");
     assert.ok(job.params.tools.includes("github/create-pr"), `the job agent is granted strut's github/create-pr: ${job.params.tools}`);
     assert.ok(!(job.params.approve ?? []).includes("github/create-pr"), "and it does not ask first: the pull request is the review");
