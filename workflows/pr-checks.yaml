@@ -1,0 +1,10 @@
+description: >-
+  Every 5 minutes (the package's schedule): strut's job/pr-checks reads the
+  checks on the pull requests the box's recent jobs delivered, and sends each
+  job whose checks all finished with one failed one turn to fix them, as the
+  person whose turn opened the pull request, naming that turn's conversation
+  so its end wakes it. Once per pull request. Strut decides who and what;
+  this workflow only says when.
+steps:
+  - id: checks
+    type: job/pr-checks
