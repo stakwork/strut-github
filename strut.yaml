@@ -1,5 +1,5 @@
 package: stadeum/github
-version: 0.1.1
+version: 0.2.0
 description: GitHub integration for the Stadeum GitHub App. Run agents in your repos and open PRs.
 requires:
   # Each person's own token. Connect GitHub (stadeum's connect seam) writes
@@ -13,6 +13,9 @@ provides:
   git:
     - { host: github.com, secret: GITHUB_TOKEN }
 job:
-  # Strut's own step: a code change ends as a pull request, opened as the
-  # job's person with their own token.
-  tools: [github/create-pr]
+  # Strut's own steps, each as the job's person with their own token: a code
+  # change ends as a pull request (create-pr), and the job reads it after:
+  # its checks, with each failed Actions job's log in a file (pr-status,
+  # `logs: true`), and what reviewers said (fetch-pr). Reading Actions logs
+  # needs the App's "Actions: read"; without it a check says why it has none.
+  tools: [github/create-pr, github/pr-status, github/fetch-pr]
