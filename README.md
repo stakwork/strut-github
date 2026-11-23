@@ -23,6 +23,7 @@ person's token reaches on GitHub is this package's to say, through strut's
 | `steps/paste.ts` | Keeps a personal access token the person made, as their own secret, once GitHub says whom it is. From the GitHub app alone, by the person themselves |
 | `steps/disconnect.ts` | Removes the person's token from the box; revokes it at GitHub first when the App gave it. From the GitHub app alone, by the person themselves |
 | `steps/installations.ts` | The box's GitHub orgs: the App's installations the admin's own token sees. An admin's call from the GitHub app alone |
+| `steps/granted.ts` | What one org grants the App, as the admin's token sees it: each repository by name, private and archived ones marked. Read only. An admin's call from the GitHub app alone |
 | `steps/repositories.ts` | Every github.com repository the run's person reaches with their own token, in strut's `git/repositories` contract: through the App, each installation's, `picked` when the org picked it; with a pasted token, GitHub's `/user/repos`. Archived ones are left out. Anyone's, as themselves |
 | `steps/_github.ts` | What the steps share |
 
@@ -64,15 +65,14 @@ For an admin, in the same app:
   or `github.com/settings/installations/<id>`), and **Add a GitHub org**
   (the seam with `install=1`). GitHub lists installations only to a token
   its App gave: a pasted token is told so.
-
-There is no repository list here, and no Add… (stadeum's
-`plans/software.md` §3.1, revised 2026-11-23). Granting the App a
-repository is not choosing to work on it: the box works on a repository
-once a person puts it in a workspace, where workspaces are made (the Code
-app), picking from what their own token reaches. That list is this
-package's `repositories` step, which strut's `git/repositories` calls as
-the person, by the `provides.git` entry for `github.com`, so the package's
-code names neither the Code app nor its package.
+- **Repositories**, by org, up to 1,000 each: a read-only list of what the
+  GitHub connection reaches (`granted`), archived ones marked. It is not
+  the box's repositories: those are chosen for a workspace, in the Code
+  app, from what each person's own token reaches (this package's
+  `repositories` step, which strut's `git/repositories` calls as the
+  person, by the `provides.git` entry for `github.com`). So the app has no
+  Add… and reads no other package's nodes, and the package's code names
+  none (stadeum's `plans/software.md` §3.1, revised 2026-11-23).
 
 A repository's webhook, made when it joins the box (`on: created:
 Repository`), waits for strut's webhook routes (stadeum's
@@ -85,8 +85,9 @@ Repository`), waits for strut's webhook routes (stadeum's
   name strut signs for the page, not a builder's preview, not a host's
   call). Another app that lists these steps among its grants, a workflow, or
   the job agent changes nothing.
-- `installations` is an admin's call from this app (`ctx.app.admin`). A
-  member's call and an admin's call from another app are refused.
+- `installations` and `granted` are an admin's call from this app
+  (`ctx.app.admin`). A member's call and an admin's call from another app
+  are refused.
 - `me` and `repositories` are anyone's: each reads the caller's own token.
   `repositories` is what strut's `git/repositories` asks, as the run's
   person, wherever it is called from.

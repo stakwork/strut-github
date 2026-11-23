@@ -318,6 +318,32 @@ function reached(r: Record<string, unknown>, picked: boolean): Reached | undefin
   };
 }
 
+/** One repository an org grants the App, as the GitHub app lists it. */
+export interface Granted {
+  /** Its https address. */
+  url: string;
+  owner: string;
+  name: string;
+  private: boolean;
+  archived?: true;
+}
+
+/** The repositories one installation grants a person's token: GitHub's
+ *  `GET /user/installations/{id}/repositories`, by name, archived ones
+ *  marked. A read-only list of what the connection reaches; it names no
+ *  other package and says nothing of the box's workspaces. */
+export async function grantedBy(ctx: Ctx, token: string, installation: number): Promise<{ repositories: Granted[]; total: number }> {
+  const { items, total } = await pages<Record<string, unknown>>(ctx, token, `/user/installations/${installation}/repositories`, "repositories", "that org's repositories");
+  const out: Granted[] = [];
+  for (const r of items) {
+    const m = FULL_NAME.exec(typeof r["full_name"] === "string" ? r["full_name"] : "");
+    if (!m || m[2] === "." || m[2] === "..") continue;
+    out.push({ url: `${WEB}/${m[1]}/${m[2]}`, owner: m[1]!, name: m[2]!, private: r["private"] === true, ...(r["archived"] === true ? { archived: true as const } : {}) });
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name) || a.owner.localeCompare(b.owner));
+  return { repositories: out, total };
+}
+
 /**
  * Every repository a person's own token reaches, for strut's
  * `git/repositories`. A token the App gave: each installation it sees

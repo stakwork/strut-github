@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHost, useShareLink, useStrutClient } from "@strut/kit";
-import { Building2, ExternalLink, GitPullRequest, KeyRound, Plug, Plus, User } from "lucide-react";
+import { Building2, ExternalLink, GitPullRequest, KeyRound, Lock, Plug, Plus, User } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -24,6 +24,7 @@ const ME = "stadeum/github/me";
 const PASTE = "stadeum/github/paste";
 const DISCONNECT = "stadeum/github/disconnect";
 const INSTALLATIONS = "stadeum/github/installations";
+const GRANTED = "stadeum/github/granted";
 /** Where a person makes a fine-grained token on GitHub. */
 const NEW_TOKEN = "https://github.com/settings/personal-access-tokens/new";
 
@@ -42,6 +43,13 @@ interface Disconnected {
   revoked?: boolean;
   why?: string;
   manage?: string;
+}
+interface Granted {
+  url: string;
+  owner: string;
+  name: string;
+  private: boolean;
+  archived?: boolean;
 }
 interface Installation {
   id: number;
@@ -285,10 +293,10 @@ function PasteForm({ busy, onPaste, onOpenGitHub }: { busy: boolean; onPaste: (t
   );
 }
 
-/** For an admin: the box's GitHub orgs, each with what it grants and a
- *  way to change it on GitHub. Which repositories the box works on is
- *  chosen where workspaces are made, from what each person's own token
- *  reaches (strut's git/repositories, which this package answers). */
+/** For an admin: the box's GitHub orgs, each with the repositories it
+ *  grants (a read-only list of what the connection reaches) and a way to
+ *  change them on GitHub. Which repositories the box works on is chosen
+ *  for a workspace, in the Code app; this app names no other package. */
 function Orgs({ install, busy }: { install?: string; busy: boolean }) {
   const client = useStrutClient();
   const host = useHost();
@@ -308,7 +316,6 @@ function Orgs({ install, busy }: { install?: string; busy: boolean }) {
           </Button>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">What an org grants the App is what people pick from when they make a workspace. Change it on GitHub.</p>
       {orgs.isLoading && <p className="text-sm text-muted-foreground">Asking GitHub…</p>}
       {orgs.error && (
         <Alert variant="destructive">
@@ -320,21 +327,58 @@ function Orgs({ install, busy }: { install?: string; busy: boolean }) {
           The App is on no org your account sees.{install ? " Add a GitHub org to install it on one." : ""}
         </p>
       )}
-      {list?.map((i) => (
-        <Card key={i.id} className="gap-2 py-3">
-          <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-4">
-            {i.type === "Organization" ? <Building2 className="size-4 text-muted-foreground" /> : <User className="size-4 text-muted-foreground" />}
-            <CardTitle className="font-mono text-base">{i.account}</CardTitle>
-            <span className="text-xs text-muted-foreground">{i.repositories === "all" ? "every repository" : "the repositories picked on GitHub"}</span>
-            {i.suspended && <Badge variant="destructive">suspended</Badge>}
-            <div className="flex-1" />
-            <Button size="sm" variant="ghost" onClick={() => void host.openLink(i.manage)}>
-              Change repositories
-              <ExternalLink className="size-3" />
-            </Button>
-          </CardHeader>
-        </Card>
-      ))}
+      {list?.map((i) => <Org key={i.id} installation={i} />)}
     </section>
+  );
+}
+
+function Org({ installation: i }: { installation: Installation }) {
+  const client = useStrutClient();
+  const host = useHost();
+  const repos = useQuery({
+    queryKey: ["github", "granted", i.id],
+    queryFn: () => client.run<{ repositories: Granted[]; total: number }>(GRANTED, { installation: i.id }),
+    enabled: !i.suspended,
+  });
+  const data = repos.data;
+  return (
+    <Card className="gap-2 py-4">
+      <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-4">
+        {i.type === "Organization" ? <Building2 className="size-4 text-muted-foreground" /> : <User className="size-4 text-muted-foreground" />}
+        <CardTitle className="font-mono text-base">{i.account}</CardTitle>
+        <span className="text-xs text-muted-foreground">{i.repositories === "all" ? "every repository" : "the repositories picked on GitHub"}</span>
+        {i.suspended && <Badge variant="destructive">suspended</Badge>}
+        <div className="flex-1" />
+        <Button size="sm" variant="ghost" onClick={() => void host.openLink(i.manage)}>
+          Change repositories
+          <ExternalLink className="size-3" />
+        </Button>
+      </CardHeader>
+      <CardContent className="flex flex-col divide-y px-4">
+        {repos.isLoading && <p className="py-2 text-sm text-muted-foreground">Reading its repositories…</p>}
+        {repos.error && <p className="py-2 text-sm text-destructive">{message(repos.error)}</p>}
+        {data && !data.repositories.length && <p className="py-2 text-sm text-muted-foreground">It grants no repositories.</p>}
+        {data?.repositories.map((r) => (
+          <div key={r.url} className="flex min-w-0 flex-col py-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{r.name}</span>
+              {r.private && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Lock className="size-3" />
+                  private
+                </span>
+              )}
+              {r.archived && <Badge variant="outline">archived</Badge>}
+            </div>
+            <span className="truncate text-xs text-muted-foreground select-all">{r.url}</span>
+          </div>
+        ))}
+        {data && data.total > data.repositories.length && (
+          <p className="py-2 text-xs text-muted-foreground">
+            The first {data.repositories.length} of {data.total}.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

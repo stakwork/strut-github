@@ -5,9 +5,8 @@ entry: src/App.tsx
 grants:
   workflows: []
   # `me` is everyone's; `paste` and `disconnect` change the viewer's own
-  # token; `installations` is an admin's, and refuses anyone else. What a
-  # person's token reaches is listed where workspaces are made, through
-  # strut's git/repositories, not here.
-  steps: [stadeum/github/me, stadeum/github/paste, stadeum/github/disconnect, stadeum/github/installations]
+  # token; `installations` and `granted` (each org's repositories, read
+  # only) are an admin's, and refuse anyone else.
+  steps: [stadeum/github/me, stadeum/github/paste, stadeum/github/disconnect, stadeum/github/installations, stadeum/github/granted]
   sqlite: false
   automations: []

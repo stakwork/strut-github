@@ -38,7 +38,7 @@ const HERE = resolve(".");
 const APP = "stadeum/github/github";
 const OTHER_APP = "acme/other/console";
 /** The GitHub app's steps. */
-const STEPS = ["stadeum/github/me", "stadeum/github/paste", "stadeum/github/disconnect", "stadeum/github/installations"];
+const STEPS = ["stadeum/github/me", "stadeum/github/paste", "stadeum/github/disconnect", "stadeum/github/installations", "stadeum/github/granted"];
 
 /** Another package, whose app an admin may open, granting this package's steps: it must see and change nothing. */
 const OTHER: Record<string, string> = {
@@ -340,7 +340,7 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
       assert.ok(!(job.params.approve ?? []).includes(read), `${read} only reads: no ask`);
     }
     const manifest = await strut.apps.manifestOf(APP);
-    assert.deepEqual([...manifest.manifest.grants.steps].sort(), [...STEPS].sort(), "no repository list: workspaces are made elsewhere");
+    assert.deepEqual([...manifest.manifest.grants.steps].sort(), [...STEPS].sort(), "no graph reads: it names no other package");
     assert.equal(manifest.manifest.admin, undefined, "everyone's app");
   });
 
@@ -478,7 +478,10 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
   it("refuses the orgs to a member, and to an admin's call from another app", async () => {
     await seam("ada", T.ada); // a member with a token: refused before it is read
     const n = calls.length;
-    for (const [type, config] of [["stadeum/github/installations", {}]] as const) {
+    for (const [type, config] of [
+      ["stadeum/github/installations", {}],
+      ["stadeum/github/granted", { installation: 101 }],
+    ] as const) {
       assert.match((await page("ada", false)(type, config)).error ?? "", /only an admin sees the box's GitHub orgs, in the GitHub app/, type);
       assert.match((await page("root", true, OTHER_APP)(type, config)).error ?? "", /the box's GitHub orgs are seen in the GitHub app \(stadeum\/github\/github\), not from acme\/other\/console/, type);
       assert.equal((await once(`orgs-${type.split("/").pop()}`, type, config)).status, "error", "nor a workflow's");
@@ -494,6 +497,24 @@ describe("stadeum/github on strut", { timeout: 300_000 }, () => {
     // And with none, to connect first.
     await ok(page("dee", true)("stadeum/github/disconnect"));
     assert.match((await page("dee", true)("stadeum/github/installations")).error ?? "", /connect GitHub first/);
+  });
+
+  it("lists each org's repositories for an admin, every page, read only", async () => {
+    const n = calls.length;
+    const out = await ok(page("root", true)("stadeum/github/granted", { installation: 101 }));
+    assert.equal(out.total, 101);
+    assert.equal(out.repositories.length, 101);
+    assert.deepEqual(out.repositories[0], { url: "https://github.com/acme/App", owner: "acme", name: "App", private: true });
+    assert.deepEqual(out.repositories.find((r: any) => r.name === "web"), { url: "https://github.com/acme/web", owner: "acme", name: "web", private: false, archived: true }, "archived, and shown");
+    assert.deepEqual(since(n).map((c) => [c.url, c.auth]), [
+      ["https://api.github.com/user/installations/101/repositories?per_page=100&page=1", `Bearer ${T.root}`],
+      ["https://api.github.com/user/installations/101/repositories?per_page=100&page=2", `Bearer ${T.root}`],
+    ]);
+    assert.deepEqual(await ok(page("root", true)("stadeum/github/granted", { installation: 202 })), {
+      total: 1,
+      repositories: [{ url: "https://github.com/root-gh/dotfiles", owner: "root-gh", name: "dotfiles", private: false }],
+    });
+    assert.match((await page("root", true)("stadeum/github/granted", { installation: 999 })).error ?? "", /GitHub did not show that org's repositories: Not Found/);
   });
 
   it("answers strut's git/repositories as the person: every installation's repositories, picked where the org picked them, archived left out", async () => {
