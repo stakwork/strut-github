@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHost, useShareLink, useStrutClient } from "@strut/kit";
-import { Building2, ExternalLink, GitPullRequest, KeyRound, Lock, Plug, Plus, User } from "lucide-react";
+import { Building2, ChevronRight, ExternalLink, GitPullRequest, KeyRound, Lock, Plug, Plus, User } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -341,11 +341,17 @@ function Org({ installation: i }: { installation: Installation }) {
     enabled: !i.suspended,
   });
   const data = repos.data;
+  // The list starts folded: the header says how many it holds.
+  const [open, setOpen] = useState(false);
   return (
     <Card className="gap-2 py-4">
       <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-4">
-        {i.type === "Organization" ? <Building2 className="size-4 text-muted-foreground" /> : <User className="size-4 text-muted-foreground" />}
-        <CardTitle className="font-mono text-base">{i.account}</CardTitle>
+        <button type="button" className="flex items-center gap-2 text-left" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <ChevronRight className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+          {i.type === "Organization" ? <Building2 className="size-4 text-muted-foreground" /> : <User className="size-4 text-muted-foreground" />}
+          <CardTitle className="font-mono text-base">{i.account}</CardTitle>
+          {data && <Badge variant="secondary">{data.total === 1 ? "1 repo" : `${data.total} repos`}</Badge>}
+        </button>
         <span className="text-xs text-muted-foreground">{i.repositories === "all" ? "every repository" : "the repositories picked on GitHub"}</span>
         {i.suspended && <Badge variant="destructive">suspended</Badge>}
         <div className="flex-1" />
@@ -354,31 +360,37 @@ function Org({ installation: i }: { installation: Installation }) {
           <ExternalLink className="size-3" />
         </Button>
       </CardHeader>
-      <CardContent className="flex flex-col divide-y px-4">
-        {repos.isLoading && <p className="py-2 text-sm text-muted-foreground">Reading its repositories…</p>}
-        {repos.error && <p className="py-2 text-sm text-destructive">{message(repos.error)}</p>}
-        {data && !data.repositories.length && <p className="py-2 text-sm text-muted-foreground">It grants no repositories.</p>}
-        {data?.repositories.map((r) => (
-          <div key={r.url} className="flex min-w-0 flex-col py-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{r.name}</span>
-              {r.private && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Lock className="size-3" />
-                  private
-                </span>
-              )}
-              {r.archived && <Badge variant="outline">archived</Badge>}
+      {repos.error && (
+        <CardContent className="px-4">
+          <p className="py-2 text-sm text-destructive">{message(repos.error)}</p>
+        </CardContent>
+      )}
+      {open && (
+        <CardContent className="flex flex-col divide-y px-4">
+          {repos.isLoading && <p className="py-2 text-sm text-muted-foreground">Reading its repositories…</p>}
+          {data && !data.repositories.length && <p className="py-2 text-sm text-muted-foreground">It grants no repositories.</p>}
+          {data?.repositories.map((r) => (
+            <div key={r.url} className="flex min-w-0 flex-col py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{r.name}</span>
+                {r.private && (
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Lock className="size-3" />
+                    private
+                  </span>
+                )}
+                {r.archived && <Badge variant="outline">archived</Badge>}
+              </div>
+              <span className="truncate text-xs text-muted-foreground select-all">{r.url}</span>
             </div>
-            <span className="truncate text-xs text-muted-foreground select-all">{r.url}</span>
-          </div>
-        ))}
-        {data && data.total > data.repositories.length && (
-          <p className="py-2 text-xs text-muted-foreground">
-            The first {data.repositories.length} of {data.total}.
-          </p>
-        )}
-      </CardContent>
+          ))}
+          {data && data.total > data.repositories.length && (
+            <p className="py-2 text-xs text-muted-foreground">
+              The first {data.repositories.length} of {data.total}.
+            </p>
+          )}
+        </CardContent>
+      )}
     </Card>
   );
 }
